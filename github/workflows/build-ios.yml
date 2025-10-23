@@ -1,0 +1,59 @@
+name: Build FFmpeg for iOS
+
+on:
+  workflow_dispatch:  # 手動実行（または push 時に変えてもOK）
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout FFmpeg source
+        uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: release/7.0  # 必要に応じてタグ変更
+          path: FFmpeg
+
+      - name: Install dependencies
+        run: |
+          brew install yasm nasm perl
+          git clone https://github.com/FFmpeg/gas-preprocessor.git
+          sudo cp gas-preprocessor/gas-preprocessor.pl /usr/local/bin/
+          sudo chmod +x /usr/local/bin/gas-preprocessor.pl
+
+      - name: Configure FFmpeg for iOS
+        run: |
+          cd FFmpeg
+          export SDKPATH=$(xcrun --sdk iphoneos --show-sdk-path)
+          export CC="xcrun -sdk iphoneos clang"
+          ./configure \
+            --prefix=$PWD/build/ios/arm64 \
+            --target-os=darwin \
+            --arch=arm64 \
+            --enable-cross-compile \
+            --sysroot=$SDKPATH \
+            --cc="$CC" \
+            --extra-cflags="-arch arm64 -mios-version-min=11.0" \
+            --extra-ldflags="-arch arm64 -mios-version-min=11.0" \
+            --enable-pic \
+            --disable-debug \
+            --disable-doc \
+            --disable-programs \
+            --enable-avformat \
+            --enable-avcodec \
+            --enable-avfilter \
+            --enable-swscale \
+            --enable-avutil
+
+      - name: Build FFmpeg
+        run: |
+          cd FFmpeg
+          make -j$(sysctl -n hw.logicalcpu)
+          make install
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-ios-arm64
+          path: FFmpeg/build/ios/arm64
